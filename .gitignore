@@ -1,0 +1,8 @@
+.env
+logs/
+exfil/
+__pycache__/
+*.pyc
+CLAUDE.md
+.claude/
+docs/
