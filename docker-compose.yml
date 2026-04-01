@@ -11,7 +11,7 @@ services:
       C2_LOG: /app/logs/c2.log
     ports:
       - "9999:9999"
-      - "127.0.0.1:9998:9998"
+      - "9998:9998"
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
