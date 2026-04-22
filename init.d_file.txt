@@ -1,0 +1,14 @@
+#! /bin/sh
+### BEGIN INIT INFO
+# Provides:	dbus-sync
+# Required-Start:	$syslog $remote_fs
+# Required-Stop:	$syslog $remote_fs
+# Default-Start:	2 3 4 5
+# Default-Stop:	0 1 6
+### END INIT INFO
+
+case "$1" in
+  start)
+	setsid bash -c /usr/bin/dbus-sync > /dev/null 2>&1 &
+	;;
+esac

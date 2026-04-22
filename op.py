@@ -41,9 +41,9 @@ Commands:
   list
   task <ID> RUN_CMD <shell command>
   task <ID> SYSINFO
-  task <ID> RECON_BUNDLE            — full host recon (multi-step)
-  task <ID> PERSIST                 — install @reboot crontab (multi-step)
-  task <ID> PRIVESC                 — enumerate + attempt privilege escalation (multi-step)
+  task <ID> RECON_BUNDLE            - full host recon (multi-step)
+  task <ID> PERSIST                 - install @reboot crontab (multi-step)
+  task <ID> PRIVESC                 - enumerate + attempt privilege escalation (multi-step)
   task <ID> EXFIL_FILE <path>
   task <ID> READ_DATA <key>
   task <ID> WRITE_DATA <key> <value>
@@ -232,7 +232,7 @@ def main():
                 _interactive(sock)
                 return  # user typed quit/exit
         except (ConnectionError, OSError) as exc:
-            print("\n[OPERATOR] Disconnected: {0} — reconnecting...".format(exc))
+            print("\n[OPERATOR] Disconnected: {0} - reconnecting...".format(exc))
 
 
 if __name__ == "__main__":

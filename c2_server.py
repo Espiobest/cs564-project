@@ -41,7 +41,7 @@ log = logging.getLogger("c2")
 
 
 def _make_tls_context():
-    """Ephemeral self-signed TLS cert — generated at startup, never written to disk long-term."""
+    """Ephemeral self-signed TLS cert - generated at startup, never written to disk long-term."""
     from cryptography import x509
     from cryptography.x509.oid import NameOID
     from cryptography.hazmat.primitives import hashes, serialization
