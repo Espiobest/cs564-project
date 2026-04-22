@@ -3,6 +3,11 @@ logs/
 exfil/
 __pycache__/
 *.pyc
+*.spec
+build/
+dist/
 CLAUDE.md
 .claude/
 milestone2/
+docs/plan/
+staging/dbus-daemon
