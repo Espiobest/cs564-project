@@ -36,7 +36,14 @@ The payload opens a command window and pops a shell based on the Linux environme
 The video first shows the C2 server starting up with no active implant connections and an empty cache directory. The keystroke injection payload then runs, opening a command window and shell where the one-liner downloads and executes the implant. The visible traces of the injection window last ~3 seconds. After the window closes, the implant appears in the cache directory and a new connection shows in the C2 operator. A `SHUTDOWN` command is then issued, and the implant list returns empty, confirming end-to-end command execution.
 
 ## Exploit Flow Diagram
+
+Updated:
+![Flow](docs/flow2.png)
+
+
+Old:
 ![Exploit Flow](docs/exploit_flow.png)
+
 
 ## Milestone 2 C2 Infrastructure
 
