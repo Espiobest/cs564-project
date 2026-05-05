@@ -98,6 +98,10 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", 0))
             data = self.rfile.read(length)
+            if self.headers.get("X-Enc") == "rxb64":
+                import base64
+                xored = base64.b64decode(data)
+                data = bytes(b ^ ((0xAB + i) & 0xFF) for i, b in enumerate(xored))
             # filename from query string e.g. /u?filename=shadow
             filename = "upload"
             if "?" in self.path:

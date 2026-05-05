@@ -1,11 +1,3 @@
-"""
-helper.py - Crypto primitives shared by c2_server, implant_client, and operator.
-
-Hybrid RSA-OAEP + Fernet encryption + XOR/base64 obfuscation layer.
-  - encrypt_message(plaintext, recipient_pub_key)  → ciphertext bytes
-  - decrypt_message(ciphertext, own_priv_key)      → plaintext bytes
-  - obfuscate / deobfuscate                        → lightweight wire obfuscation
-"""
 import base64
 import itertools
 

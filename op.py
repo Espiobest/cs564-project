@@ -59,6 +59,11 @@ def _print_result(resp):
         print("  ERROR: {0}".format(resp.get("message", resp)))
         return
     result = resp.get("result", {})
+    # Catch implant-level errors (type=ERROR, no payload)
+    if result.get("type") == "ERROR":
+        err = result.get("error", {})
+        print("  IMPLANT ERROR [{0}]: {1}".format(err.get("code", "?"), err.get("message", result)))
+        return
     payload = result.get("payload", {})
 
     if "stdout" in payload:
