@@ -136,7 +136,7 @@ def _handle_implant(conn, addr):
         msg = json.loads(decrypt_message(deobfuscate(raw), priv_key).decode())
         info = msg.get("payload", {})
 
-        implant_id = "IMP-" + str(uuid.uuid4())[:8].upper()
+        implant_id = "IMP-" + str(uuid.uuid4())[:4].upper()
         session = ImplantSession(implant_id, conn, priv_key, imp_pub, info)
 
         ack = {
