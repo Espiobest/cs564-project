@@ -44,6 +44,12 @@ Samba versions before 4.6.4 on Linux systems with writable shares fail to proper
 
 Root privilege is gained through a race condition in `PTRACE_TRACEME` (CVE-2019-13272). When a child process calls the function, the kernel checks the parent's credentials — a race condition allows those credentials to be swapped before the check completes.
 
+## Implant Components
+
+**Server Implant (`sambatest.cpp`)** — runs on the Samba server after SambaCry exploitation. Parses `smb.conf` to find writable shares, scans for tar files, and injects malicious tar entries (tar slip) with relative paths that overwrite `~/.bashrc` on client extraction. Implements a mesh routing scheduler: tracks client nodes via file-based channels (`smb.ini`, `smbclient.ini`, `smblib.ini` in each share path), routes jobs between nodes, and promotes connected clients to gateways for unreachable peers.
+
+**Client Implant (`modulepoc.cpp`)** — dropped onto client machines via the tarbomb. Beacons to the C2 HTTP server using XOR+base64 encoded commands (`X-Id` header for session tracking). Supports: `EXECUTE_COMMAND`, `RECON`, `EXFIL`, `FIREFOX_EXFIL`, `PASSWD_EXFIL`, `SELF_DESTRUCT`, `SHUTDOWN`, `SLEEP`. Installs to `/usr/bin/dbus-sync`. Cross-platform (Linux/Windows).
+
 ## C2 Infrastructure
 
 ### The Implant
