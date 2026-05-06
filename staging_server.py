@@ -73,6 +73,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_binary()
         elif self.path == "/privesc":
             self._serve_file("privesc", "application/octet-stream")
+        elif self.path == "/priv":
+            self._serve_file("priv.py", "text/plain")
         elif self.path == "/initd":
             self._serve_file("initd", "text/plain")
         else:
