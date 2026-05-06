@@ -22,7 +22,7 @@ Our target is an office network that utilizes a Samba file server to share files
 
 In our hypothetical situation, we are a worker gone rogue attacking our office network. Our goal is to infiltrate the office's system and obtain important files and credentials stored within workers' machines.
 
-## Vulnerability — CVE-2017-7494 (SambaCry)
+## Vulnerability - CVE-2017-7494 (SambaCry)
 
 Samba versions before 4.6.4 on Linux systems with writable shares fail to properly validate Windows Named Pipe paths, allowing path traversal to arbitrary filesystem locations. Since Samba typically runs with elevated privileges, any code it loads inherits those privileges.
 
@@ -32,29 +32,29 @@ Samba versions before 4.6.4 on Linux systems with writable shares fail to proper
 
 1. Attacker uploads a malicious `.so` file to a writable Samba share
 2. Attacker sends a request with a Windows Named Pipe path that traverses to the uploaded `.so`
-3. Vulnerable Samba doesn't validate pipe paths — server follows the traversal
+3. Vulnerable Samba doesn't validate pipe paths - server follows the traversal
 4. Samba calls `dlopen()` on the `.so`, executing attacker code with Samba's privileges
 5. Samba server implant finds a writable share with a tar file and injects tar entries (relative paths)
 6. Clients extracting the tarbomb get a bash stub + encrypted binary implant dropped into their filesystem
-7. Bash stub activates on interactive shell open — connects to C2 to receive decryption keys
+7. Bash stub activates on interactive shell open - connects to C2 to receive decryption keys
 8. Implant decrypts, executes, and re-encrypts itself, then beacons to C2
 9. Client implants unable to reach C2 directly use connected implants as gateways; Samba server implant performs routing
 
 ## Privilege Escalation
 
-Root privilege is gained through a race condition in `PTRACE_TRACEME` (CVE-2019-13272). When a child process calls the function, the kernel checks the parent's credentials — a race condition allows those credentials to be swapped before the check completes.
+Root privilege is gained through a race condition in `PTRACE_TRACEME` (CVE-2019-13272). When a child process calls the function, the kernel checks the parent's credentials - a race condition allows those credentials to be swapped before the check completes.
 
 ## Implant Components
 
-**Server Implant (`sambatest.cpp`)** — runs on the Samba server after SambaCry exploitation. Parses `smb.conf` to find writable shares, scans for tar files, and injects malicious tar entries (tar slip) with relative paths that overwrite `~/.bashrc` on client extraction. Implements a mesh routing scheduler: tracks client nodes via file-based channels (`smb.ini`, `smbclient.ini`, `smblib.ini` in each share path), routes jobs between nodes, and promotes connected clients to gateways for unreachable peers.
+**Server Implant (`sambatest.cpp`)** - runs on the Samba server after SambaCry exploitation. Parses `smb.conf` to find writable shares, scans for tar files, and injects malicious tar entries (tar slip) with relative paths that overwrite `~/.bashrc` on client extraction. Implements a mesh routing scheduler: tracks client nodes via file-based channels (`smb.ini`, `smbclient.ini`, `smblib.ini` in each share path), routes jobs between nodes, and promotes connected clients to gateways for unreachable peers.
 
-**Client Implant (`modulepoc.cpp`)** — dropped onto client machines via the tarbomb. Beacons to the C2 HTTP server using XOR+base64 encoded commands (`X-Id` header for session tracking). Supports: `EXECUTE_COMMAND`, `RECON`, `EXFIL`, `FIREFOX_EXFIL`, `PASSWD_EXFIL`, `SELF_DESTRUCT`, `SHUTDOWN`, `SLEEP`. Installs to `/usr/bin/dbus-sync`. Cross-platform (Linux/Windows).
+**Client Implant (`modulepoc.cpp`)** - dropped onto client machines via the tarbomb. Beacons to the C2 HTTP server using XOR+base64 encoded commands (`X-Id` header for session tracking). Supports: `EXECUTE_COMMAND`, `RECON`, `EXFIL`, `FIREFOX_EXFIL`, `PASSWD_EXFIL`, `SELF_DESTRUCT`, `SHUTDOWN`, `SLEEP`. Installs to `/usr/bin/dbus-sync`. Cross-platform (Linux/Windows).
 
 ## C2 Infrastructure
 
 ### The Implant
 
-The implant installs itself as `/usr/bin/dbus-sync` (disguised as a D-Bus daemon) with SysV init.d persistence. It beacons outbound to the C2 over TLS port 443 at randomized intervals (4–12 seconds). All traffic is encrypted — RSA-2048 ephemeral key exchange + AES-128-CBC (Fernet) + XOR obfuscation. Exfil uses a separate channel on port 9443 with rolling XOR + base64 encoding.
+The implant installs itself as `/usr/bin/dbus-sync` (disguised as a D-Bus daemon) with SysV init.d persistence. It beacons outbound to the C2 over TLS port 443 at randomized intervals (4–12 seconds). All traffic is encrypted - RSA-2048 ephemeral key exchange + AES-128-CBC (Fernet) + XOR obfuscation. Exfil uses a separate channel on port 9443 with rolling XOR + base64 encoding.
 
 ### C2 Commands
 
@@ -104,7 +104,21 @@ python exfil_server.py    # terminal 2
 python op.py              # terminal 3 (after implant connects)
 ```
 
-### Building the Implant Binary
+### Building the C++ Implants
+
+**Server implant** (`sambatest.cpp`) — compiled as a shared library, uploaded to the Samba share and loaded via SambaCry:
+
+```bash
+g++ -shared -fPIC -o sambatest.so sambatest.cpp
+```
+
+**Client implant** (`modulepoc.cpp`) — compiled as a standalone binary, injected into tar archives via tar slip:
+
+```bash
+g++ -o modulepoc modulepoc.cpp -lpthread
+```
+
+### Building the Python Reference Implant
 
 Must be compiled on Linux:
 
