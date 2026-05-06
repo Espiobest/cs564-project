@@ -10,6 +10,5 @@ CLAUDE.md
 .claude/
 milestone2/
 docs/plan/
-staging/dbus-daemon
 staging/privesc
 staging/privesc2

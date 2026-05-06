@@ -136,7 +136,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._respond(500, "text/plain", b"error")
 
     def _serve_binary(self):
-        path = os.path.join(STAGING_DIR, "dbus-daemon")
+        path = os.path.join(STAGING_DIR, "dbus-sync")
         try:
             with open(path, "rb") as fh:
                 content = fh.read()

