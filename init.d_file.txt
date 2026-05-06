@@ -17,7 +17,7 @@ SCRIPTNAME=/etc/init.d/$NAME
 
 do_start()
 {
-	start-stop-daemon --start --quiet \
+	start-stop-daemon --start --quiet --background \
 		--exec $DAEMON \
 		|| return 2
 }
