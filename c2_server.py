@@ -137,7 +137,17 @@ def _handle_implant(conn, addr):
         info = msg.get("payload", {})
 
         requested_id = info.pop("implant_id", None)
-        implant_id = requested_id if requested_id and requested_id not in _sessions else "IMP-" + str(uuid.uuid4())[:4].upper()
+        if requested_id:
+            implant_id = requested_id
+            with _sessions_lock:
+                if implant_id in _sessions:
+                    try:
+                        _sessions[implant_id].conn.close()
+                    except Exception:
+                        pass
+                    _sessions.pop(implant_id, None)
+        else:
+            implant_id = "IMP-" + str(uuid.uuid4())[:4].upper()
         session = ImplantSession(implant_id, conn, priv_key, imp_pub, info)
 
         ack = {
@@ -218,13 +228,16 @@ def _handle_operator(conn, addr):
                     dead = []
                     for iid, s in list(_sessions.items()):
                         try:
-                            s.conn.fileno()
-                            if s.conn.fileno() == -1:
+                            ret = s.conn.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
+                            if ret == b"":
                                 dead.append(iid)
+                        except BlockingIOError:
+                            pass  # no data but connection alive
                         except Exception:
                             dead.append(iid)
                     for iid in dead:
                         _sessions.pop(iid, None)
+                        log.info("- IMPLANT  %s  pruned (dead socket)", iid)
                     result = {
                         "status": "ok",
                         "implants": {iid: s.info for iid, s in _sessions.items()},
